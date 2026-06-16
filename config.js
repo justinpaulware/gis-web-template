@@ -1,37 +1,53 @@
-const CONFIG = {
+const PROJECTS = {
+  default: {
+    name: "Default Map",
+    layers: []
+  },
 
-  filters: [
-    {
-      id: "category",
-      label: "Category",
-      field: "Category",
-      options: ["All", "Community Asset", "Opportunity Site", "Concern", "Vacant Building"]
-    }
-  ],
+  peekskill: {
+    name: "Peekskill Example",
 
-  layers: [
-    {
-      id: "community",
-      name: "Community Points",
-      type: "sheet",
-      url: "PASTE_GOOGLE_SHEET_CSV_URL",
-      group: "Community",
+    layers: [
+      {
+        id: "community_points",
+        name: "Community Points",
+        type: "sheet",
 
-      style: "circle",
+        url: "PASTE_GOOGLE_SHEET_CSV_URL",
 
-      colorField: "Category",
-      colorMap: {
-        "Community Asset": "#2563eb",
-        "Opportunity Site": "#f59e0b",
-        "Concern": "#ef4444",
-        "Vacant Building": "#6b7280"
+        geometry: "point",
+        latField: "Latitude",
+        lngField: "Longitude",
+
+        style: {
+          type: "categorical",
+          field: "Category",
+
+          stops: [
+            { value: "Asset", color: "#2563eb" },
+            { value: "Opportunity", color: "#f59e0b" },
+            { value: "Concern", color: "#ef4444" }
+          ],
+
+          default: "#999999",
+          radius: 6
+        }
       },
 
-      paint: {
-        "circle-radius": 6,
-        "circle-stroke-width": 1,
-        "circle-stroke-color": "#ffffff"
+      {
+        id: "parcels",
+        name: "Parcels",
+        type: "rest",
+
+        url: "PASTE_GEOJSON_OR_FEATURESERVER_URL",
+
+        geometry: "polygon",
+
+        style: {
+          fill: "#10b981",
+          opacity: 0.3
+        }
       }
-    }
-  ]
+    ]
+  }
 };
