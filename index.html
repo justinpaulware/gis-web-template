@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>GIS Web Template v3</title>
+<title>GIS Web Template</title>
 
 <link href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
@@ -17,9 +17,9 @@ body { margin: 0; font-family: sans-serif; }
   position: absolute;
   left: 0;
   top: 0;
-  width: 300px;
+  width: 280px;
   height: 100vh;
-  background: #fff;
+  background: white;
   border-right: 1px solid #ddd;
   padding: 12px;
   overflow-y: auto;
@@ -27,20 +27,26 @@ body { margin: 0; font-family: sans-serif; }
 
 #map {
   position: absolute;
-  left: 300px;
+  left: 280px;
   right: 0;
   top: 0;
   bottom: 0;
 }
 
-.block {
+.section-title {
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.layer-block {
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid #eee;
 }
 
-h4 { margin: 10px 0 5px; }
-select, input, button { width: 100%; margin-bottom: 6px; }
+.small {
+  font-size: 12px;
+}
 </style>
 </head>
 
@@ -48,48 +54,42 @@ select, input, button { width: 100%; margin-bottom: 6px; }
 
 <div id="sidebar">
 
-  <h3>GIS Web Template v3</h3>
-
-  <!-- PROJECTS -->
-  <select id="projectSelect"></select>
-
-  <hr>
+  <h3>GIS Template</h3>
 
   <!-- FILTERS -->
-  <h4>🔎 Filters</h4>
   <div id="filters"></div>
 
   <hr>
 
+  <!-- LAYERS -->
+  <div id="layer-controls"></div>
+
+  <hr>
+
   <!-- LEGEND -->
-  <h4>🎨 Legend</h4>
   <div id="legend"></div>
 
   <hr>
 
-  <!-- INSPECTOR -->
-  <h4>📍 Inspector</h4>
-  <div id="inspector"><em>Click a feature</em></div>
-
-  <hr>
-
-  <!-- LAYERS -->
-  <h4>Layers</h4>
-  <div id="layers"></div>
-
-  <hr>
-
-  <!-- ADD LAYER -->
+  <!-- NO-CODE BUILDER -->
   <h4>➕ Add Layer</h4>
 
-  <input id="lname" placeholder="Layer name">
-  <input id="lurl" placeholder="Data URL">
-  <input id="lfield" placeholder="Category field (optional)">
-  <button id="addLayer">Add Layer</button>
+  <input id="lb-name" placeholder="Layer name"><br><br>
+
+  <select id="lb-type">
+    <option value="sheet">Google Sheet</option>
+    <option value="rest">REST GeoJSON</option>
+  </select><br><br>
+
+  <input id="lb-url" placeholder="Data URL"><br><br>
+  <input id="lb-group" placeholder="Group"><br><br>
+  <input id="lb-field" placeholder="Category field"><br><br>
+
+  <button id="add-layer">Add Layer</button>
 
   <hr>
 
-  <button id="export">Export Project</button>
+  <button id="export-config">Export config.js</button>
 
 </div>
 
@@ -98,7 +98,7 @@ select, input, button { width: 100%; margin-bottom: 6px; }
 <script>
 
 // =====================
-// MAP
+// STATE
 // =====================
 
 const map = new maplibregl.Map({
@@ -108,43 +108,12 @@ const map = new maplibregl.Map({
   zoom: 12
 });
 
-// =====================
-// STATE
-// =====================
-
-let ACTIVE_KEY = "default";
-let RUNTIME = structuredClone(PROJECTS[ACTIVE_KEY]);
-let DATA = {};
-let FILTER_STATE = {};
-
-// =====================
-// STYLE ENGINE
-// =====================
-
-function getColor(layer) {
-
-  if (!layer.style || layer.style.type !== "categorical") {
-    return "#3b82f6";
-  }
-
-  return [
-    "match",
-    ["get", layer.style.field],
-    ...layer.style.stops.flatMap(s => [s.value, s.color]),
-    layer.style.default || "#999"
-  ];
-}
+let RUNTIME = structuredClone(CONFIG);
+const DATA = {};
 
 // =====================
 // LOADERS
 // =====================
-
-function loadLayer(layer) {
-  if (layer.type === "sheet") loadSheet(layer);
-  if (layer.type === "rest") loadRest(layer);
-}
-
-// ---------------------
 
 function loadSheet(layer) {
 
@@ -157,15 +126,12 @@ function loadSheet(layer) {
       const geojson = {
         type: "FeatureCollection",
         features: res.data
-          .filter(d => d[layer.latField] && d[layer.lngField])
+          .filter(d => d.Latitude && d.Longitude)
           .map(d => ({
             type: "Feature",
             geometry: {
               type: "Point",
-              coordinates: [
-                parseFloat(d[layer.lngField]),
-                parseFloat(d[layer.latField])
-              ]
+              coordinates: [parseFloat(d.Longitude), parseFloat(d.Latitude)]
             },
             properties: d
           }))
@@ -179,20 +145,26 @@ function loadSheet(layer) {
         id: layer.id,
         type: "circle",
         source: layer.id,
+
         paint: {
-          "circle-radius": layer.style?.radius || 6,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#fff",
-          "circle-color": getColor(layer)
+          "circle-radius": layer.paint["circle-radius"],
+          "circle-stroke-width": layer.paint["circle-stroke-width"],
+          "circle-stroke-color": layer.paint["circle-stroke-color"],
+
+          "circle-color": [
+            "match",
+            ["get", layer.colorField],
+            ...Object.entries(layer.colorMap).flat(),
+            "#999"
+          ]
         }
       });
 
-      renderAll();
+      renderUI();
+
     }
   });
 }
-
-// ---------------------
 
 function loadRest(layer) {
 
@@ -202,306 +174,239 @@ function loadRest(layer) {
 
       DATA[layer.id] = data;
 
-      map.addSource(layer.id, {
-        type: "geojson",
-        data
+      map.addSource(layer.id, { type: "geojson", data });
+
+      map.addLayer({
+        id: layer.id,
+        type: "fill",
+        source: layer.id,
+        paint: {
+          "fill-color": "#10b981",
+          "fill-opacity": 0.3
+        }
       });
 
-      if (layer.geometry === "polygon") {
+      renderUI();
 
-        map.addLayer({
-          id: layer.id,
-          type: "fill",
-          source: layer.id,
-          paint: {
-            "fill-color": layer.style?.fill || "#10b981",
-            "fill-opacity": layer.style?.opacity || 0.3
-          }
-        });
-
-      } else {
-
-        map.addLayer({
-          id: layer.id,
-          type: "circle",
-          source: layer.id,
-          paint: {
-            "circle-radius": 6,
-            "circle-color": "#3b82f6",
-            "circle-stroke-width": 1,
-            "circle-stroke-color": "#fff"
-          }
-        });
-      }
-
-      renderAll();
     });
-}
 
-// =====================
-// UI ORCHESTRATION
-// =====================
-
-function renderAll() {
-  renderLayers();
-  buildFilters();
-  buildLegend();
-}
-
-// =====================
-// LAYERS UI
-// =====================
-
-function renderLayers() {
-
-  const el = document.getElementById("layers");
-  el.innerHTML = "";
-
-  RUNTIME.layers.forEach(layer => {
-
-    const div = document.createElement("div");
-    div.className = "block";
-
-    div.innerHTML = `
-      <label>
-        <input type="checkbox" id="t-${layer.id}" checked>
-        ${layer.name}
-      </label>
-      <button id="z-${layer.id}">Zoom</button>
-    `;
-
-    el.appendChild(div);
-
-    document.getElementById(`t-${layer.id}`).onchange = (e) => {
-      map.setLayoutProperty(
-        layer.id,
-        "visibility",
-        e.target.checked ? "visible" : "none"
-      );
-    };
-
-    document.getElementById(`z-${layer.id}`).onclick = () => {
-
-      const data = DATA[layer.id];
-      if (!data?.features?.length) return;
-
-      const coords = data.features.map(f => f.geometry.coordinates);
-
-      const bounds = coords.reduce((b, c) =>
-        b.extend(c),
-        new maplibregl.LngLatBounds(coords[0], coords[0])
-      );
-
-      map.fitBounds(bounds, { padding: 40 });
-    };
-  });
 }
 
 // =====================
 // FILTERS
 // =====================
 
-function buildFilters() {
+function renderFilters() {
 
   const el = document.getElementById("filters");
   el.innerHTML = "";
 
-  RUNTIME.layers.forEach(layer => {
+  const f = CONFIG.filters?.[0];
+  if (!f) return;
 
-    if (!layer.style?.field) return;
+  const select = document.createElement("select");
 
-    const values = new Set();
+  f.options.forEach(o => {
+    const opt = document.createElement("option");
+    opt.value = o;
+    opt.text = o;
+    select.appendChild(opt);
+  });
 
-    DATA[layer.id]?.features?.forEach(f => {
-      const v = f.properties?.[layer.style.field];
-      if (v) values.add(v);
+  select.addEventListener("change", () => {
+
+    const value = select.value;
+
+    RUNTIME.layers.forEach(layer => {
+
+      const source = map.getSource(layer.id);
+      const data = DATA[layer.id];
+
+      if (!source || !data) return;
+
+      if (value === "All") {
+        source.setData(data);
+      } else {
+        source.setData({
+          ...data,
+          features: data.features.filter(f =>
+            f.properties[layer.colorField] === value
+          )
+        });
+      }
     });
 
-    const wrap = document.createElement("div");
-    wrap.className = "block";
-
-    const select = document.createElement("select");
-
-    select.innerHTML = `
-      <option value="ALL">${layer.name} (All)</option>
-      ${[...values].map(v => `<option value="${v}">${v}</option>`).join("")}
-    `;
-
-    select.onchange = () => {
-      FILTER_STATE[layer.id] = select.value;
-      applyFilters();
-    };
-
-    wrap.innerHTML = `<strong>${layer.name}</strong>`;
-    wrap.appendChild(select);
-
-    el.appendChild(wrap);
   });
-}
 
-function applyFilters() {
-
-  RUNTIME.layers.forEach(layer => {
-
-    const source = map.getSource(layer.id);
-    const data = DATA[layer.id];
-
-    if (!source || !data) return;
-
-    const v = FILTER_STATE[layer.id];
-    const field = layer.style?.field;
-
-    if (!v || v === "ALL") {
-      source.setData(data);
-      return;
-    }
-
-    source.setData({
-      ...data,
-      features: data.features.filter(f =>
-        f.properties?.[field] === v
-      )
-    });
-  });
+  el.innerHTML = "<div class='section-title'>Filters</div>";
+  el.appendChild(select);
 }
 
 // =====================
 // LEGEND
 // =====================
 
-function buildLegend() {
+function renderLegend() {
 
   const el = document.getElementById("legend");
-  el.innerHTML = "";
+  el.innerHTML = "<div class='section-title'>Legend</div>";
 
   RUNTIME.layers.forEach(layer => {
 
-    const style = layer.style;
-    if (!style) return;
+    if (!layer.colorMap) return;
 
     const block = document.createElement("div");
-    block.className = "block";
-
     block.innerHTML = `<strong>${layer.name}</strong><br>`;
 
-    if (style.type === "categorical") {
-
-      style.stops.forEach(s => {
-
-        const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.gap = "6px";
-
-        row.innerHTML = `
-          <div style="width:10px;height:10px;background:${s.color}"></div>
-          <div>${s.value}</div>
-        `;
-
-        block.appendChild(row);
-      });
-    }
-
-    else if (style.fill) {
-
+    Object.entries(layer.colorMap).forEach(([k, v]) => {
       block.innerHTML += `
-        <div style="display:flex;gap:6px;">
-          <div style="width:10px;height:10px;background:${style.fill}"></div>
-          <div>Layer</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <div style="width:10px;height:10px;background:${v}"></div>
+          <div class="small">${k}</div>
         </div>
       `;
-    }
+    });
 
     el.appendChild(block);
   });
 }
 
 // =====================
-// INSPECTOR
+// SIDEBAR (LAYERS)
 // =====================
 
-map.on("click", (e) => {
+function renderUI() {
 
-  const f = map.queryRenderedFeatures(e.point)[0];
-  if (!f) return;
+  const el = document.getElementById("layer-controls");
+  el.innerHTML = "<div class='section-title'>Layers</div>";
 
-  const el = document.getElementById("inspector");
+  const groups = {};
 
-  let html = `<strong>${f.layer.id}</strong><br><br>`;
-
-  Object.entries(f.properties || {}).forEach(([k,v]) => {
-    html += `<div><strong>${k}:</strong> ${v}</div>`;
+  RUNTIME.layers.forEach(l => {
+    if (!groups[l.group]) groups[l.group] = [];
+    groups[l.group].push(l);
   });
 
-  el.innerHTML = html;
-});
+  Object.keys(groups).forEach(g => {
 
-// =====================
-// PROJECTS
-// =====================
+    el.innerHTML += `<div class="section-title">${g}</div>`;
 
-function getProject() {
-  return new URLSearchParams(window.location.search)
-    .get("project") || "default";
+    groups[g].forEach(layer => {
+
+      const div = document.createElement("div");
+      div.className = "layer-block";
+
+      div.innerHTML = `
+        <label>
+          <input type="checkbox" id="t-${layer.id}" checked>
+          ${layer.name}
+        </label><br>
+
+        <input type="range" min="0" max="1" step="0.1"
+               value="1" id="o-${layer.id}">
+
+        <button id="z-${layer.id}">Zoom</button>
+      `;
+
+      el.appendChild(div);
+
+      document.getElementById(`t-${layer.id}`).onclick = (e) => {
+        map.setLayoutProperty(
+          layer.id,
+          "visibility",
+          e.target.checked ? "visible" : "none"
+        );
+      };
+
+      document.getElementById(`o-${layer.id}`).oninput = (e) => {
+
+        const v = parseFloat(e.target.value);
+
+        if (layer.style === "circle") {
+          map.setPaintProperty(layer.id, "circle-opacity", v);
+        }
+
+        if (layer.style === "fill") {
+          map.setPaintProperty(layer.id, "fill-opacity", v);
+        }
+      };
+
+      document.getElementById(`z-${layer.id}`).onclick = () => {
+
+        const data = DATA[layer.id];
+        if (!data) return;
+
+        const coords = data.features
+          .filter(f => f.geometry.type === "Point")
+          .map(f => f.geometry.coordinates);
+
+        if (!coords.length) return;
+
+        const bounds = coords.reduce((b, c) =>
+          b.extend(c),
+          new maplibregl.LngLatBounds(coords[0], coords[0])
+        );
+
+        map.fitBounds(bounds, { padding: 40 });
+      };
+
+    });
+  });
+
+  renderLegend();
 }
 
-function loadProject() {
-
-  ACTIVE_KEY = getProject();
-  RUNTIME = structuredClone(PROJECTS[ACTIVE_KEY]);
-
-  RUNTIME.layers.forEach(loadLayer);
-}
-
 // =====================
-// BUILDER
+// NO-CODE BUILDER
 // =====================
 
-document.getElementById("addLayer").onclick = () => {
+document.getElementById("add-layer").onclick = () => {
 
   const layer = {
     id: "layer_" + Date.now(),
-    name: document.getElementById("lname").value,
-    type: "sheet",
-    url: document.getElementById("lurl").value,
-    latField: "Latitude",
-    lngField: "Longitude",
-    style: {
-      type: "categorical",
-      field: document.getElementById("lfield").value || "Category",
-      stops: [{ value: "default", color: "#3b82f6" }],
-      default: "#999",
-      radius: 6
-    }
+    name: document.getElementById("lb-name").value,
+    type: document.getElementById("lb-type").value,
+    url: document.getElementById("lb-url").value,
+    group: document.getElementById("lb-group").value || "Ungrouped",
+    colorField: document.getElementById("lb-field").value || null,
+    style: "circle",
+    paint: {
+      "circle-radius": 6,
+      "circle-stroke-width": 1,
+      "circle-stroke-color": "#fff"
+    },
+    colorMap: { default: "#3b82f6" }
   };
 
   RUNTIME.layers.push(layer);
   loadLayer(layer);
-  renderAll();
-};
+});
 
-// =====================
-// EXPORT
-// =====================
-
-document.getElementById("export").onclick = () => {
+// export config
+document.getElementById("export-config").onclick = () => {
 
   const blob = new Blob(
-    [JSON.stringify(RUNTIME, null, 2)],
-    { type: "application/json" }
+    ["const CONFIG = " + JSON.stringify(RUNTIME, null, 2)],
+    { type: "text/javascript" }
   );
 
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = ACTIVE_KEY + "-project.json";
+  a.download = "config.js";
   a.click();
 };
 
 // =====================
-// INIT
+// ENGINE
 // =====================
 
+function loadLayer(layer) {
+  if (layer.type === "sheet") loadSheet(layer);
+  if (layer.type === "rest") loadRest(layer);
+}
+
 map.on("load", () => {
-  loadProject();
+  RUNTIME.layers.forEach(loadLayer);
 });
 
 </script>
