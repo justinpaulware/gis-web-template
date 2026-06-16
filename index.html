@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>GIS Template</title>
+<title>GIS Web Template v3</title>
 
 <link href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
@@ -17,32 +17,80 @@ body { margin: 0; font-family: sans-serif; }
   position: absolute;
   left: 0;
   top: 0;
-  width: 260px;
+  width: 300px;
   height: 100vh;
-  background: white;
+  background: #fff;
+  border-right: 1px solid #ddd;
   padding: 12px;
   overflow-y: auto;
-  border-right: 1px solid #ddd;
 }
 
 #map {
   position: absolute;
-  left: 260px;
+  left: 300px;
   right: 0;
   top: 0;
   bottom: 0;
 }
 
-.layer-block { margin-bottom: 10px; }
-.group { font-weight: bold; margin-top: 10px; }
+.block {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+h4 { margin: 10px 0 5px; }
+select, input, button { width: 100%; margin-bottom: 6px; }
 </style>
 </head>
 
 <body>
 
 <div id="sidebar">
-  <h3>Layers</h3>
-  <div id="controls"></div>
+
+  <h3>GIS Web Template v3</h3>
+
+  <!-- PROJECTS -->
+  <select id="projectSelect"></select>
+
+  <hr>
+
+  <!-- FILTERS -->
+  <h4>🔎 Filters</h4>
+  <div id="filters"></div>
+
+  <hr>
+
+  <!-- LEGEND -->
+  <h4>🎨 Legend</h4>
+  <div id="legend"></div>
+
+  <hr>
+
+  <!-- INSPECTOR -->
+  <h4>📍 Inspector</h4>
+  <div id="inspector"><em>Click a feature</em></div>
+
+  <hr>
+
+  <!-- LAYERS -->
+  <h4>Layers</h4>
+  <div id="layers"></div>
+
+  <hr>
+
+  <!-- ADD LAYER -->
+  <h4>➕ Add Layer</h4>
+
+  <input id="lname" placeholder="Layer name">
+  <input id="lurl" placeholder="Data URL">
+  <input id="lfield" placeholder="Category field (optional)">
+  <button id="addLayer">Add Layer</button>
+
+  <hr>
+
+  <button id="export">Export Project</button>
+
 </div>
 
 <div id="map"></div>
@@ -60,12 +108,43 @@ const map = new maplibregl.Map({
   zoom: 12
 });
 
-// store raw data
-const DATA = {};
+// =====================
+// STATE
+// =====================
+
+let ACTIVE_KEY = "default";
+let RUNTIME = structuredClone(PROJECTS[ACTIVE_KEY]);
+let DATA = {};
+let FILTER_STATE = {};
+
+// =====================
+// STYLE ENGINE
+// =====================
+
+function getColor(layer) {
+
+  if (!layer.style || layer.style.type !== "categorical") {
+    return "#3b82f6";
+  }
+
+  return [
+    "match",
+    ["get", layer.style.field],
+    ...layer.style.stops.flatMap(s => [s.value, s.color]),
+    layer.style.default || "#999"
+  ];
+}
 
 // =====================
 // LOADERS
 // =====================
+
+function loadLayer(layer) {
+  if (layer.type === "sheet") loadSheet(layer);
+  if (layer.type === "rest") loadRest(layer);
+}
+
+// ---------------------
 
 function loadSheet(layer) {
 
@@ -78,14 +157,14 @@ function loadSheet(layer) {
       const geojson = {
         type: "FeatureCollection",
         features: res.data
-          .filter(d => d.Latitude && d.Longitude)
+          .filter(d => d[layer.latField] && d[layer.lngField])
           .map(d => ({
             type: "Feature",
             geometry: {
               type: "Point",
               coordinates: [
-                parseFloat(d.Longitude),
-                parseFloat(d.Latitude)
+                parseFloat(d[layer.lngField]),
+                parseFloat(d[layer.latField])
               ]
             },
             properties: d
@@ -94,34 +173,26 @@ function loadSheet(layer) {
 
       DATA[layer.id] = geojson;
 
-      map.addSource(layer.id, {
-        type: "geojson",
-        data: geojson
-      });
+      map.addSource(layer.id, { type: "geojson", data: geojson });
 
       map.addLayer({
         id: layer.id,
         type: "circle",
         source: layer.id,
         paint: {
-          "circle-radius": layer.paint.circle-radius,
-          "circle-stroke-width": layer.paint.circle-stroke-width,
-          "circle-stroke-color": layer.paint.circle-stroke-color,
-
-          "circle-color": [
-            "match",
-            ["get", layer.colorField],
-            ...Object.entries(layer.colorMap).flat(),
-            "#999"
-          ]
+          "circle-radius": layer.style?.radius || 6,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#fff",
+          "circle-color": getColor(layer)
         }
       });
 
-      buildUI();
-
+      renderAll();
     }
   });
 }
+
+// ---------------------
 
 function loadRest(layer) {
 
@@ -136,105 +207,301 @@ function loadRest(layer) {
         data
       });
 
-      map.addLayer({
-        id: layer.id,
-        type: "fill",
-        source: layer.id,
-        paint: {
-          "fill-color": layer.colorMap?.default || "#10b981",
-          "fill-opacity": 0.3
-        }
-      });
+      if (layer.geometry === "polygon") {
 
-      buildUI();
+        map.addLayer({
+          id: layer.id,
+          type: "fill",
+          source: layer.id,
+          paint: {
+            "fill-color": layer.style?.fill || "#10b981",
+            "fill-opacity": layer.style?.opacity || 0.3
+          }
+        });
 
+      } else {
+
+        map.addLayer({
+          id: layer.id,
+          type: "circle",
+          source: layer.id,
+          paint: {
+            "circle-radius": 6,
+            "circle-color": "#3b82f6",
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "#fff"
+          }
+        });
+      }
+
+      renderAll();
     });
-
 }
 
 // =====================
-// UI
+// UI ORCHESTRATION
 // =====================
 
-function buildUI() {
+function renderAll() {
+  renderLayers();
+  buildFilters();
+  buildLegend();
+}
 
-  const el = document.getElementById("controls");
+// =====================
+// LAYERS UI
+// =====================
+
+function renderLayers() {
+
+  const el = document.getElementById("layers");
   el.innerHTML = "";
 
-  CONFIG.layers.forEach(layer => {
+  RUNTIME.layers.forEach(layer => {
 
     const div = document.createElement("div");
-    div.className = "layer-block";
+    div.className = "block";
 
     div.innerHTML = `
       <label>
         <input type="checkbox" id="t-${layer.id}" checked>
         ${layer.name}
       </label>
-      <br>
-      <input type="range" min="0" max="1" step="0.1"
-             value="1" id="o-${layer.id}">
       <button id="z-${layer.id}">Zoom</button>
     `;
 
     el.appendChild(div);
 
-    document.getElementById(`t-${layer.id}`)
-      .addEventListener("change", e => {
-        map.setLayoutProperty(
-          layer.id,
-          "visibility",
-          e.target.checked ? "visible" : "none"
-        );
-      });
+    document.getElementById(`t-${layer.id}`).onchange = (e) => {
+      map.setLayoutProperty(
+        layer.id,
+        "visibility",
+        e.target.checked ? "visible" : "none"
+      );
+    };
 
-    document.getElementById(`o-${layer.id}`)
-      .addEventListener("input", e => {
-        const v = parseFloat(e.target.value);
+    document.getElementById(`z-${layer.id}`).onclick = () => {
 
-        if (layer.style === "circle") {
-          map.setPaintProperty(layer.id, "circle-opacity", v);
-        }
+      const data = DATA[layer.id];
+      if (!data?.features?.length) return;
 
-        if (layer.style === "fill") {
-          map.setPaintProperty(layer.id, "fill-opacity", v);
-        }
-      });
+      const coords = data.features.map(f => f.geometry.coordinates);
 
-    document.getElementById(`z-${layer.id}`)
-      .addEventListener("click", () => {
-        const data = DATA[layer.id];
-        if (!data) return;
+      const bounds = coords.reduce((b, c) =>
+        b.extend(c),
+        new maplibregl.LngLatBounds(coords[0], coords[0])
+      );
 
-        const coords = [];
-
-        data.features.forEach(f => {
-          if (f.geometry.type === "Point") {
-            coords.push(f.geometry.coordinates);
-          }
-        });
-
-        if (!coords.length) return;
-
-        const bounds = coords.reduce((b, c) =>
-          b.extend(c),
-          new maplibregl.LngLatBounds(coords[0], coords[0])
-        );
-
-        map.fitBounds(bounds, { padding: 40 });
-      });
+      map.fitBounds(bounds, { padding: 40 });
+    };
   });
 }
 
 // =====================
-// BOOT
+// FILTERS
+// =====================
+
+function buildFilters() {
+
+  const el = document.getElementById("filters");
+  el.innerHTML = "";
+
+  RUNTIME.layers.forEach(layer => {
+
+    if (!layer.style?.field) return;
+
+    const values = new Set();
+
+    DATA[layer.id]?.features?.forEach(f => {
+      const v = f.properties?.[layer.style.field];
+      if (v) values.add(v);
+    });
+
+    const wrap = document.createElement("div");
+    wrap.className = "block";
+
+    const select = document.createElement("select");
+
+    select.innerHTML = `
+      <option value="ALL">${layer.name} (All)</option>
+      ${[...values].map(v => `<option value="${v}">${v}</option>`).join("")}
+    `;
+
+    select.onchange = () => {
+      FILTER_STATE[layer.id] = select.value;
+      applyFilters();
+    };
+
+    wrap.innerHTML = `<strong>${layer.name}</strong>`;
+    wrap.appendChild(select);
+
+    el.appendChild(wrap);
+  });
+}
+
+function applyFilters() {
+
+  RUNTIME.layers.forEach(layer => {
+
+    const source = map.getSource(layer.id);
+    const data = DATA[layer.id];
+
+    if (!source || !data) return;
+
+    const v = FILTER_STATE[layer.id];
+    const field = layer.style?.field;
+
+    if (!v || v === "ALL") {
+      source.setData(data);
+      return;
+    }
+
+    source.setData({
+      ...data,
+      features: data.features.filter(f =>
+        f.properties?.[field] === v
+      )
+    });
+  });
+}
+
+// =====================
+// LEGEND
+// =====================
+
+function buildLegend() {
+
+  const el = document.getElementById("legend");
+  el.innerHTML = "";
+
+  RUNTIME.layers.forEach(layer => {
+
+    const style = layer.style;
+    if (!style) return;
+
+    const block = document.createElement("div");
+    block.className = "block";
+
+    block.innerHTML = `<strong>${layer.name}</strong><br>`;
+
+    if (style.type === "categorical") {
+
+      style.stops.forEach(s => {
+
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "6px";
+
+        row.innerHTML = `
+          <div style="width:10px;height:10px;background:${s.color}"></div>
+          <div>${s.value}</div>
+        `;
+
+        block.appendChild(row);
+      });
+    }
+
+    else if (style.fill) {
+
+      block.innerHTML += `
+        <div style="display:flex;gap:6px;">
+          <div style="width:10px;height:10px;background:${style.fill}"></div>
+          <div>Layer</div>
+        </div>
+      `;
+    }
+
+    el.appendChild(block);
+  });
+}
+
+// =====================
+// INSPECTOR
+// =====================
+
+map.on("click", (e) => {
+
+  const f = map.queryRenderedFeatures(e.point)[0];
+  if (!f) return;
+
+  const el = document.getElementById("inspector");
+
+  let html = `<strong>${f.layer.id}</strong><br><br>`;
+
+  Object.entries(f.properties || {}).forEach(([k,v]) => {
+    html += `<div><strong>${k}:</strong> ${v}</div>`;
+  });
+
+  el.innerHTML = html;
+});
+
+// =====================
+// PROJECTS
+// =====================
+
+function getProject() {
+  return new URLSearchParams(window.location.search)
+    .get("project") || "default";
+}
+
+function loadProject() {
+
+  ACTIVE_KEY = getProject();
+  RUNTIME = structuredClone(PROJECTS[ACTIVE_KEY]);
+
+  RUNTIME.layers.forEach(loadLayer);
+}
+
+// =====================
+// BUILDER
+// =====================
+
+document.getElementById("addLayer").onclick = () => {
+
+  const layer = {
+    id: "layer_" + Date.now(),
+    name: document.getElementById("lname").value,
+    type: "sheet",
+    url: document.getElementById("lurl").value,
+    latField: "Latitude",
+    lngField: "Longitude",
+    style: {
+      type: "categorical",
+      field: document.getElementById("lfield").value || "Category",
+      stops: [{ value: "default", color: "#3b82f6" }],
+      default: "#999",
+      radius: 6
+    }
+  };
+
+  RUNTIME.layers.push(layer);
+  loadLayer(layer);
+  renderAll();
+};
+
+// =====================
+// EXPORT
+// =====================
+
+document.getElementById("export").onclick = () => {
+
+  const blob = new Blob(
+    [JSON.stringify(RUNTIME, null, 2)],
+    { type: "application/json" }
+  );
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = ACTIVE_KEY + "-project.json";
+  a.click();
+};
+
+// =====================
+// INIT
 // =====================
 
 map.on("load", () => {
-  CONFIG.layers.forEach(layer => {
-    if (layer.type === "sheet") loadSheet(layer);
-    if (layer.type === "rest") loadRest(layer);
-  });
+  loadProject();
 });
 
 </script>
