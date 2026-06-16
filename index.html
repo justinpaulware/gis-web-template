@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>GIS Template</title>
+
+<link href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<script src="config.js"></script>
+
+<style>
+body { margin: 0; font-family: sans-serif; }
+
+#sidebar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 260px;
+  height: 100vh;
+  background: white;
+  padding: 12px;
+  overflow-y: auto;
+  border-right: 1px solid #ddd;
+}
+
+#map {
+  position: absolute;
+  left: 260px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.layer-block { margin-bottom: 10px; }
+.group { font-weight: bold; margin-top: 10px; }
+</style>
+</head>
+
+<body>
+
+<div id="sidebar">
+  <h3>Layers</h3>
+  <div id="controls"></div>
+</div>
+
+<div id="map"></div>
+
+<script>
+
+// =====================
+// MAP
+// =====================
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://tiles.openfreemap.org/styles/liberty",
+  center: [-73.92, 41.29],
+  zoom: 12
+});
+
+// store raw data
+const DATA = {};
+
+// =====================
+// LOADERS
+// =====================
+
+function loadSheet(layer) {
+
+  Papa.parse(layer.url, {
+    download: true,
+    header: true,
+
+    complete: (res) => {
+
+      const geojson = {
+        type: "FeatureCollection",
+        features: res.data
+          .filter(d => d.Latitude && d.Longitude)
+          .map(d => ({
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [
+                parseFloat(d.Longitude),
+                parseFloat(d.Latitude)
+              ]
+            },
+            properties: d
+          }))
+      };
+
+      DATA[layer.id] = geojson;
+
+      map.addSource(layer.id, {
+        type: "geojson",
+        data: geojson
+      });
+
+      map.addLayer({
+        id: layer.id,
+        type: "circle",
+        source: layer.id,
+        paint: {
+          "circle-radius": layer.paint.circle-radius,
+          "circle-stroke-width": layer.paint.circle-stroke-width,
+          "circle-stroke-color": layer.paint.circle-stroke-color,
+
+          "circle-color": [
+            "match",
+            ["get", layer.colorField],
+            ...Object.entries(layer.colorMap).flat(),
+            "#999"
+          ]
+        }
+      });
+
+      buildUI();
+
+    }
+  });
+}
+
+function loadRest(layer) {
+
+  fetch(layer.url)
+    .then(r => r.json())
+    .then(data => {
+
+      DATA[layer.id] = data;
+
+      map.addSource(layer.id, {
+        type: "geojson",
+        data
+      });
+
+      map.addLayer({
+        id: layer.id,
+        type: "fill",
+        source: layer.id,
+        paint: {
+          "fill-color": layer.colorMap?.default || "#10b981",
+          "fill-opacity": 0.3
+        }
+      });
+
+      buildUI();
+
+    });
+
+}
+
+// =====================
+// UI
+// =====================
+
+function buildUI() {
+
+  const el = document.getElementById("controls");
+  el.innerHTML = "";
+
+  CONFIG.layers.forEach(layer => {
+
+    const div = document.createElement("div");
+    div.className = "layer-block";
+
+    div.innerHTML = `
+      <label>
+        <input type="checkbox" id="t-${layer.id}" checked>
+        ${layer.name}
+      </label>
+      <br>
+      <input type="range" min="0" max="1" step="0.1"
+             value="1" id="o-${layer.id}">
+      <button id="z-${layer.id}">Zoom</button>
+    `;
+
+    el.appendChild(div);
+
+    document.getElementById(`t-${layer.id}`)
+      .addEventListener("change", e => {
+        map.setLayoutProperty(
+          layer.id,
+          "visibility",
+          e.target.checked ? "visible" : "none"
+        );
+      });
+
+    document.getElementById(`o-${layer.id}`)
+      .addEventListener("input", e => {
+        const v = parseFloat(e.target.value);
+
+        if (layer.style === "circle") {
+          map.setPaintProperty(layer.id, "circle-opacity", v);
+        }
+
+        if (layer.style === "fill") {
+          map.setPaintProperty(layer.id, "fill-opacity", v);
+        }
+      });
+
+    document.getElementById(`z-${layer.id}`)
+      .addEventListener("click", () => {
+        const data = DATA[layer.id];
+        if (!data) return;
+
+        const coords = [];
+
+        data.features.forEach(f => {
+          if (f.geometry.type === "Point") {
+            coords.push(f.geometry.coordinates);
+          }
+        });
+
+        if (!coords.length) return;
+
+        const bounds = coords.reduce((b, c) =>
+          b.extend(c),
+          new maplibregl.LngLatBounds(coords[0], coords[0])
+        );
+
+        map.fitBounds(bounds, { padding: 40 });
+      });
+  });
+}
+
+// =====================
+// BOOT
+// =====================
+
+map.on("load", () => {
+  CONFIG.layers.forEach(layer => {
+    if (layer.type === "sheet") loadSheet(layer);
+    if (layer.type === "rest") loadRest(layer);
+  });
+});
+
+</script>
+
+</body>
+</html>
