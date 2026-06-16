@@ -1,37 +1,22 @@
-# GIS Web Template
+# GIS Web Template (Project-Based System)
 
-A lightweight, config-driven GIS viewer using:
-- MapLibre GL
-- Google Sheets (CSV)
-- ArcGIS REST
-- GitHub Pages
+A lightweight, open-source GIS platform for planning workflows.
 
----
+## Features
+- Multi-project support
+- Google Sheets + REST layers
+- No-code layer builder
+- Filters + legend system
+- Export/import project files
+- GitHub Pages ready
 
 ## How to use
 
-1. Click **"Use this template"**
-2. Edit `config.js`
-3. Add your data sources
-4. Enable GitHub Pages
-5. Done
+1. Click “Use this template”
+2. Open `config.js`
+3. Or import a `.json` project file
+4. Deploy via GitHub Pages
 
----
+## Projects
 
-## Data formats
-
-### Google Sheets
-Must include:
-- Latitude
-- Longitude
-- Category (optional for styling)
-
-### REST
-Must return GeoJSON:
-`.../query?where=1=1&outFields=*&f=geojson`
-
----
-
-## No coding required per project
-
-All customization happens in `config.js`
+Switch via URL:
