@@ -1,32 +1,43 @@
-# GIS Web Template (No-Code + Config Driven)
+# GIS Web Map Template v1.0
 
-A lightweight, open-source GIS web viewer for planning and mapping.
+A lightweight, open-source GIS web mapping template using:
 
-## Features
-- Google Sheets integration
-- ArcGIS REST support
+- MapLibre GL JS
+- Google Sheets (live data)
+- ArcGIS FeatureServer REST
+- Attribute-based styling
+- Auto-generated legend
 - Layer toggles
-- Opacity controls
-- Filters (attribute-based)
-- Auto legend
-- No-code layer builder
-- Export config.js
-- GitHub Pages ready
 
 ---
 
 ## How to use
 
-1. Click **Use this template**
-2. Open `config.js`
-3. Paste your data sources
+1. Clone repo
+2. Edit `layers.js`
+3. Add data sources:
+   - Google Sheets CSV
+   - ArcGIS REST FeatureServer query
 4. Enable GitHub Pages
-5. Done
+5. Deploy
 
 ---
 
-## No coding required
+## Data requirements (Google Sheets)
 
-All customization happens via:
-- config.js OR
-- built-in layer builder UI
+Must include:
+
+- Latitude
+- Longitude
+- Type (Asset / Opportunity / Concern)
+
+---
+
+## Philosophy
+
+This template treats:
+
+- Sheets = participatory data
+- REST = authoritative GIS data
+- MapLibre = rendering engine
+- GitHub Pages = deployment layer
