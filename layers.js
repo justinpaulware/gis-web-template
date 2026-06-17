@@ -1,16 +1,6 @@
 const LAYERS = [
     {
-        id: "community",
-        name: "Community Input",
-        source: {
-            type: "sheet",
-            url: "PASTE_GOOGLE_SHEET_CSV"
-        },
-        geometry: "point"
-    },
-
-    {
-        id: "opportunity-sites",
+        id: "opportunities",
         name: "Opportunity Sites",
         source: {
             type: "sheet",
@@ -20,11 +10,11 @@ const LAYERS = [
     },
 
     {
-        id: "zoning",
-        name: "Zoning",
+        id: "counties",
+        name: "Counties",
         source: {
             type: "rest",
-            url: "PASTE_REST_FEATURESERVER_QUERY"
+            url: "https://services6.arcgis.com/EbVsqZ18sv1kVJ3k/arcgis/rest/services/NYS_Civil_Boundaries/FeatureServer/2/query?where=1=1&outFields=*&f=geojson"
         },
         geometry: "fill"
     }
